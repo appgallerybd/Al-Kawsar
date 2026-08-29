@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus { ACTIVE SUSPENDED BANNED }
+enum BlogStatus { DRAFT PUBLISHED SCHEDULED ARCHIVED }
+enum Visibility { PUBLIC UNLISTED PRIVATE }
+enum ReportStatus { PENDING REVIEWED RESOLVED DISMISSED }
+
+enum RoleName { USER AUTHOR MODERATOR ADMIN SUPER_ADMIN }
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  username        String   @unique
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  status          UserStatus @default(ACTIVE)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  profile         Profile?
+  roles           UserRole[]
+  blogs           Blog[]
+  comments        Comment[]
+  blogLikes       BlogLike[]
+  commentLikes    CommentLike[]
+  bookmarks       Bookmark[]
+  following       Follow[] @relation("Follower")
+  followers       Follow[] @relation("Following")
+  notifications   Notification[]
+  reports         Report[]
+  media           Media[]
+  revisions       BlogRevision[]
+  auditLogs       AuditLog[]
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model Profile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  fullName    String?
+  bio         String?
+  avatarUrl   String?
+  coverUrl    String?
+  website     String?
+  location    String?
+  socialLinks Json?
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Role {
+  id          String @id @default(cuid())
+  name        RoleName @unique
+  users       UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([userId, roleId])
+}
+
+model Blog {
+  id              String @id @default(cuid())
+  authorId        String
+  categoryId      String?
+  title           String
+  slug            String @unique
+  subtitle        String?
+  excerpt         String?
+  content         Json
+  contentFormat   String @default("rich-text")
+  coverImageUrl   String?
+  seoTitle        String?
+  seoDescription  String?
+  canonicalUrl    String?
+  status          BlogStatus @default(DRAFT)
+  visibility      Visibility @default(PUBLIC)
+  publishedAt     DateTime?
+  scheduledAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  author          User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags            BlogTag[]
+  revisions       BlogRevision[]
+  comments        Comment[]
+  likes           BlogLike[]
+  bookmarks       Bookmark[]
+  media           Media[]
+  views           View[]
+  reports         Report[]
+
+  @@index([authorId, status, publishedAt])
+  @@index([categoryId, publishedAt])
+  @@index([status, publishedAt])
+}
+
+model BlogRevision {
+  id        String @id @default(cuid())
+  blogId    String
+  authorId  String
+  title     String
+  content   Json
+  createdAt DateTime @default(now())
+  blog      Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  author    User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  @@index([blogId, createdAt])
+}
+
+model Category {
+  id          String @id @default(cuid())
+  name        String
+  slug        String @unique
+  description String?
+  blogs       Blog[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tag {
+  id        String @id @default(cuid())
+  name      String @unique
+  slug      String @unique
+  blogs     BlogTag[]
+  createdAt DateTime @default(now())
+}
+
+model BlogTag {
+  blogId String
+  tagId  String
+  blog   Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  tag    Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@id([blogId, tagId])
+}
+
+model Comment {
+  id        String @id @default(cuid())
+  blogId    String
+  authorId  String
+  parentId  String?
+  body      String
+  editedAt  DateTime?
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  blog      Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  author    User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+  likes     CommentLike[]
+  reports   Report[]
+  @@index([blogId, createdAt])
+  @@index([parentId, createdAt])
+}
+
+model BlogLike {
+  userId String
+  blogId String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  @@id([userId, blogId])
+}
+
+model CommentLike {
+  userId    String
+  commentId String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  @@id([userId, commentId])
+}
+
+model Bookmark {
+  userId    String
+  blogId    String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  @@id([userId, blogId])
+  @@index([userId, createdAt])
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  @@id([followerId, followingId])
+  @@index([followingId, createdAt])
+}
+
+model Notification {
+  id        String @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, readAt, createdAt])
+}
+
+model Report {
+  id          String @id @default(cuid())
+  reporterId  String
+  blogId      String?
+  commentId   String?
+  reason      String
+  details     String?
+  status      ReportStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  reporter    User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  blog        Blog? @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  comment     Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  @@index([status, createdAt])
+}
+
+model Media {
+  id        String @id @default(cuid())
+  ownerId   String
+  blogId    String?
+  url       String
+  key       String
+  mimeType  String
+  sizeBytes Int
+  altText   String?
+  caption   String?
+  createdAt DateTime @default(now())
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  blog Blog? @relation(fields: [blogId], references: [id], onDelete: SetNull)
+  @@index([ownerId, createdAt])
+}
+
+model View {
+  id         String @id @default(cuid())
+  blogId     String
+  visitorKey String
+  device     String?
+  browser    String?
+  country    String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  @@index([blogId, createdAt])
+  @@index([visitorKey, createdAt])
+}
+
+model AuditLog {
+  id         String @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  previous   Json?
+  next       Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  actor      User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
